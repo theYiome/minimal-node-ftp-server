@@ -55,3 +55,7 @@ Please implement the FTP server in the form specified by the RFC https://datatra
     It will serve multiple clients at once.
 
     It will be safe.
+
+## Useful links
+
+Przykładowy serwer do testowania: https://test.rebex.net/
