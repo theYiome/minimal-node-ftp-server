@@ -1,6 +1,9 @@
 import { loadJSON } from './files';
 import * as fsPromises from 'node:fs/promises';
 
+const portArg = process.argv.find(arg => parseInt(arg));
+const port = portArg ? portArg : 21;
+
 type User = {
     username: string;
     password: string;
@@ -50,16 +53,22 @@ telnet.createServer(function (client: any) {
                 break;
             }
             case "PASS": {
-                const currentUser = users.find(user => user.username === client.username);
+                const givenUsername = client.username;
+                const currentUser = users.find(user => user.username === givenUsername);
                 const passwordCorrect = currentUser ? currentUser.password === value : false;
                 if(currentUser && passwordCorrect) {
-                    client.write(responses.loggedIn);
+                    client.write(responses.loggedIn(givenUsername));
                     client.loginSuccessful = true;
                 }
                 else {
                     client.write(responses.loginFailed);
                     client.loginSuccessful = false; 
                 }
+                break;
+            }
+            case "QUIT": {
+                client.loginSuccessful = false;
+                client.write(responses.disconnected);
                 break;
             }
             case "PORT": {
@@ -98,7 +107,7 @@ telnet.createServer(function (client: any) {
 
     client.write(responses.ready);
 
-}).listen(21);
+}).listen(port);
 
 
 const responses = {
@@ -109,7 +118,8 @@ const responses = {
     disconnected: "221 Disconnected.\n",
     closingControlConnection: "221 Service closing control connection.\n",
     actionSuccessful: "226 Closing data connection. Requested file action successful.\n",
-    loggedIn: "230 Logged in.\n",
+    loggedIn: (username: string = "") => `230 "${username}" logged in.\n`,
+    cwd: (dir: string = "/") => `257 "${dir}" is current directory\n`,
 
     passwordRequired: "331 Password required for username.\n",
     cantOpen: "425 Can't open data connection.\n",
