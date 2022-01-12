@@ -1,4 +1,5 @@
-import * as fsPromises from 'node:fs/promises';
+// import {promises as fsPromises} from 'node:fs';
+const fsPromises = require("fs").promises;
 
 export async function loadString(path: string): Promise<string> {
     try {

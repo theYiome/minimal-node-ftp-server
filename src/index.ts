@@ -1,5 +1,6 @@
 import { loadJSON } from './files';
-import * as fsPromises from 'node:fs/promises';
+// import {promises as fsPromises} from 'node:fs';
+const fsPromises = require("fs").promises;
 
 const portArg = process.argv.find(arg => parseInt(arg));
 const port = portArg ? portArg : 21;
@@ -26,11 +27,23 @@ loadJSON("users.json").then(file => {
 });
 
 
+const parseSocketData = (rawData: string) => {
+    const rawPort: string = rawData;
+    const splittedPort = rawPort.split(",");
+    const host = splittedPort[0] + "." + splittedPort[1] + "." + splittedPort[2] + "." + splittedPort[3];
+    const port = (parseInt(splittedPort[4]) * 256) + parseInt(splittedPort[5]);
+    return {host, port};
+};
+
 const telnet = require('telnet');
+const net = require('net');
+
 telnet.createServer(function (client: any) {
 
-    // make unicode characters work properly
-    client.do.transmit_binary()
+    const clientData = {
+        username: null as string,
+        password: null as string
+    }
 
     // listen for the actual data from the client
     client.on('data', function (b: Buffer) {
@@ -56,13 +69,13 @@ telnet.createServer(function (client: any) {
                 const givenUsername = client.username;
                 const currentUser = users.find(user => user.username === givenUsername);
                 const passwordCorrect = currentUser ? currentUser.password === value : false;
-                if(currentUser && passwordCorrect) {
+                if (currentUser && passwordCorrect) {
                     client.write(responses.loggedIn(givenUsername));
                     client.loginSuccessful = true;
                 }
                 else {
                     client.write(responses.loginFailed);
-                    client.loginSuccessful = false; 
+                    client.loginSuccessful = false;
                 }
                 break;
             }
@@ -76,7 +89,9 @@ telnet.createServer(function (client: any) {
                 client.port = value;
                 break;
             }
-            case "XPWD": {
+            case "XPWD":
+            case "PWD":
+            {
                 client.write(responses.ok);
                 break;
             }
@@ -89,16 +104,52 @@ telnet.createServer(function (client: any) {
                 break;
             }
             case "STOR": {
-                client.write(responses.ok);
+                client.write(responses.fileOk);
+
+                const rawPort: string = client.port;
+                const splittedPort = rawPort.split(",");
+                const host = splittedPort[0] + "." + splittedPort[1] + "." + splittedPort[2] + "." + splittedPort[3];
+                const port = (parseInt(splittedPort[4]) * 256) + parseInt(splittedPort[5]);
+
+                console.log({ host, port });
+
+                const connection = net.createConnection({ port, host }, () => {
+                    console.log("Connected!");
+                });
+                connection.on('data', (data: any) => {
+                    console.log({data, command, value});
+                    //TODO: save to file
+                });
+                connection.on('end', () => {
+                    client.write(responses.actionSuccessful);
+                });
+
                 break;
             }
             case "RETR": {
-                client.write(responses.ok);
+                client.write(responses.fileOk);
+
+                const rawPort: string = client.port;
+                const splittedPort = rawPort.split(",");
+                const host = splittedPort[0] + "." + splittedPort[1] + "." + splittedPort[2] + "." + splittedPort[3];
+                const port = (parseInt(splittedPort[4]) * 256) + parseInt(splittedPort[5]);
+
+                console.log({ host, port });
+
+                const connection = net.createConnection({ port, host }, () => {
+                    console.log("Connected!");
+                    connection.write("some file should be here!");
+                    connection.end();
+                });
+                connection.on('end', () => {
+                    client.write(responses.actionSuccessful);
+                });
+
                 break;
             }
             default: {
                 console.warn(`${command} not implemented!`);
-                client.write(responses.notImplemented); 
+                client.write(responses.notImplemented);
                 break;
             }
         }
