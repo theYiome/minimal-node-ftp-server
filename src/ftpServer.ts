@@ -17,7 +17,7 @@ const getCurrentPath = (clientCd: string, commandValue: string) => {
 }
 
 
-const manageClientRequest = (client: any, users: User[], command: string, value: string) => {
+const manageClientRequest = async (client: any, users: User[], command: string, value: string) => {
 
     console.log({ value, command });
 
@@ -58,11 +58,65 @@ const manageClientRequest = (client: any, users: User[], command: string, value:
             break;
         }
         case "XPWD":
-        case "PWD":
-            {
-                client.write(responses.pwd(getCurrentPath(client.cd, "")));
-                break;
+        case "PWD": {
+            client.write(responses.pwd(getCurrentPath(client.cd, "")));
+            break;
+        }
+        case "XMKD":
+        case "MKD": {
+            if (client.loginSuccessful) {
+                const currentPath = getCurrentPath(client.cd, value);
+                fsPromises.mkdir(currentPath, { recursive: true });
+                client.write(responses.ok);
             }
+            else
+                client.write(responses.loginFailed);
+
+            break;
+        }
+        case "XRMD":
+        case "RMD": {
+            if (client.loginSuccessful) {
+                const currentPath = getCurrentPath(client.cd, value);
+
+                try { 
+                    await fsPromises.unlink(currentPath);
+                    client.write(responses.ok);
+                } 
+                catch (e) { 
+                    console.log({e});
+
+                    switch (e.code) {
+                        case "ENOENT": {
+                            client.write(responses.fileUnavailable);
+                            break;
+                        }
+                        case "EPERM": {
+                            try {
+                                await fsPromises.rmdir(currentPath);
+                                client.write(responses.ok);
+                            }
+                            catch(e2) {
+                                console.log({e2});
+                                if(e2.code === "ENOTEMPTY")
+                                    client.write(responses.directoryNotEmpty);
+                                else
+                                    client.write(responses.actionNotTaken);
+                            }
+                            break;
+                        }
+                        default: {
+                            client.write(responses.actionNotTaken);
+                        }
+                    }
+                };
+
+            }
+            else
+                client.write(responses.loginFailed);
+
+            break;
+        }
         case "NLST": {
             client.write(responses.fileOk);
             const { host, port } = parsedSocketData(client.port);
@@ -172,12 +226,15 @@ const responses = {
     passwordRequired: "331 Password required for username.\n",
     cantOpen: "425 Can't open data connection.\n",
     connectionClosed: "426 Connection closed; transfer aborted.\n",
+    actionNotTaken: "450 Requested file action not taken.\n",
 
     syntaxError: "501 Syntax error in parameters or arguments.\n",
     notImplemented: "502 Not implemented.\n",
     loginFailed: "530 User not log in.\n",
-    fileUnavailable: "550 Requested action not taken. File unavailable.\n"
+    fileUnavailable: "550 Requested action not taken. File unavailable.\n",
+
+    directoryNotEmpty: "10066 Directory not empty.\n"
 }
 
 
-export { responses, manageClientRequest };
+export { responses, manageClientRequest, storageDir };
