@@ -29,6 +29,7 @@
     "typescript": "^4.5.4"
   },
   "dependencies": {
+    "log-to-file": "^3.0.0",
     "telnet": "0.0.1",
     "websocket": "^1.0.34"
   }
