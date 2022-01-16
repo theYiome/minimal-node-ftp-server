@@ -23,21 +23,21 @@ Please implement the FTP server in the form specified by the RFC https://datatra
 
     It will support text login and anonymous sessions. ✓
 
-    Anonymous sessions will only be able to access the "public" directories (and their contents) for each user. No other files will be visible.
+    Anonymous sessions will only be able to access the "public" directories (and their contents) for each user. No other files will be visible. ✓
 
     The logged in user will have access to and see all his files and directories and the "public" directories of all other users. ✓
 
-    The logged in user will not have access to other users' files.
+    The logged in user will not be able to modify other users' files. ✓
 
     It will enable:
 
-    uploading files to the server,
+        uploading files to the server, ✓
 
         downloading files from the server, ✓
 
-        deleting files from the server,
+        deleting files from the server, ✓
 
-        creating and deleting directories on the server,
+        creating and deleting directories on the server, ✓
 
         printing the contents of any directory that the user has access to. ✓
 
@@ -54,7 +54,7 @@ Please implement the FTP server in the form specified by the RFC https://datatra
 
     It will serve multiple clients at once. ✓
 
-    It will be safe. 
+    It will be safe. ✓
 
 ## Useful links
 

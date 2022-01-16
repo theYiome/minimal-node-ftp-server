@@ -66,6 +66,12 @@ const manageClientRequest = async (client: any, users: User[], command: string, 
         case "MKD": {
             if (client.loginSuccessful) {
                 const currentPath = getCurrentPath(client.cd, value);
+
+                if (!canModify(currentPath, client.username, client.loginSuccessful)) {
+                    client.write(responses.fileUnavailable);
+                    return;
+                }
+
                 fsPromises.mkdir(currentPath, { recursive: true });
                 client.write(responses.ok);
             }
@@ -75,16 +81,22 @@ const manageClientRequest = async (client: any, users: User[], command: string, 
             break;
         }
         case "XRMD":
-        case "RMD": {
+        case "RMD":
+        case "DELE": {
             if (client.loginSuccessful) {
                 const currentPath = getCurrentPath(client.cd, value);
 
-                try { 
+                if (!canModify(currentPath, client.username, client.loginSuccessful)) {
+                    client.write(responses.fileUnavailable);
+                    return;
+                }
+
+                try {
                     await fsPromises.unlink(currentPath);
                     client.write(responses.ok);
-                } 
-                catch (e) { 
-                    console.log({e});
+                }
+                catch (e) {
+                    console.log({ e });
 
                     switch (e.code) {
                         case "ENOENT": {
@@ -96,9 +108,9 @@ const manageClientRequest = async (client: any, users: User[], command: string, 
                                 await fsPromises.rmdir(currentPath);
                                 client.write(responses.ok);
                             }
-                            catch(e2) {
-                                console.log({e2});
-                                if(e2.code === "ENOTEMPTY")
+                            catch (e2) {
+                                console.log({ e2 });
+                                if (e2.code === "ENOTEMPTY")
                                     client.write(responses.directoryNotEmpty);
                                 else
                                     client.write(responses.actionNotTaken);
@@ -118,16 +130,32 @@ const manageClientRequest = async (client: any, users: User[], command: string, 
             break;
         }
         case "NLST": {
-            client.write(responses.fileOk);
             const { host, port } = parsedSocketData(client.port);
             const currentPath = getCurrentPath(client.cd, value);
-
+            console.log({currentPath, cd: client.cd, value});
+            
+            if (!hasAccess(currentPath, client.username, client.loginSuccessful)) {
+                client.write(responses.fileUnavailable);
+                return;
+            }
+            
+            client.write(responses.fileOk);
             const connection = net.createConnection({ port, host }, () => {
                 ls(currentPath).then((dirContent: string[]) => {
-                    const lsResponse = (dirContent.length > 0 ? dirContent.reduce((a: string, b: string) => (a + "\n" + b)) : "") + "\n";
-                    console.log({ dirContent, currentPath, lsResponse });
-                    connection.write(lsResponse);
-                    connection.end();
+
+                    const pathArray = currentPath.split(path.sep);
+                    const isFirstLevel = pathArray.length === 2;
+
+                    if (!client.loginSuccessful && isFirstLevel) {
+                        const lsResponse = dirContent.includes("public") ? "public\n" : "\n";
+                        connection.write(lsResponse);
+                        connection.end();
+                    } else {
+                        const lsResponse = (dirContent.length > 0 ? dirContent.reduce((a: string, b: string) => (a + "\n" + b)) : "") + "\n";
+                        console.log({ dirContent, currentPath, lsResponse });
+                        connection.write(lsResponse);
+                        connection.end();
+                    }
                 });
             });
             connection.on('end', () => {
@@ -137,12 +165,28 @@ const manageClientRequest = async (client: any, users: User[], command: string, 
             break;
         }
         case "CWD": {
-            client.cd = path.join(client.cd, value);
-            client.write(responses.ok);
+            const newCd = path.join(client.cd, value);
+            const currentPath = getCurrentPath(client.cd, value);
+
+            console.log({currentPath, cd: client.cd, value});
+            if (hasAccess(currentPath, client.username, client.loginSuccessful)) {
+                client.cd = newCd;
+                client.write(responses.ok);
+            }
+            else
+                client.write(responses.fileUnavailable);
+
             break;
         }
         case "STOR": {
             if (client.loginSuccessful) {
+
+                const currentPath = getCurrentPath(client.cd, value);
+                if (!canModify(currentPath, client.username, client.loginSuccessful)) {
+                    client.write(responses.fileUnavailable);
+                    return;
+                }
+
                 client.write(responses.fileOk);
                 const { host, port } = parsedSocketData(client.port);
 
@@ -152,10 +196,8 @@ const manageClientRequest = async (client: any, users: User[], command: string, 
                 connection.on('data', (data: any) => {
                     console.log({ data, command, value });
 
-                    const currentPath = getCurrentPath(client.cd, value);
                     saveFile(data, currentPath);
                     connection.end();
-                    //TODO: save to file
                 });
                 connection.on('end', () => {
                     client.write(responses.actionSuccessful);
@@ -167,12 +209,17 @@ const manageClientRequest = async (client: any, users: User[], command: string, 
             break;
         }
         case "RETR": {
-            const { host, port } = parsedSocketData(client.port);
 
+            const currentPath = getCurrentPath(client.cd, value);
+            if (!hasAccess(currentPath, client.username, client.loginSuccessful)) {
+                client.write(responses.fileUnavailable);
+                return;
+            }
+
+            const { host, port } = parsedSocketData(client.port);
             const connection = net.createConnection({ port, host }, () => {
                 console.log("RETR");
 
-                const currentPath = getCurrentPath(client.cd, value);
                 fsPromises.readFile(currentPath).then((fileContent: Buffer) => {
                     client.write(responses.fileOk);
                     connection.write(fileContent);
@@ -204,11 +251,49 @@ const parsedSocketData = (rawData: string) => {
 };
 
 
-const isPathValid = (somePath: string, username: string) => {
-    if (!path.isAbsolute(somePath) || somePath.split(path.sep)[0] !== storageDir) {
+const isPathValid = (somePath: string) => {
+    if (!path.isAbsolute(somePath) && somePath.split(path.sep)[0] === storageDir) {
         return true;
     }
-    else return false;
+    else 
+        return false;
+};
+
+const hasAccess = (somePath: string, username: string, loginSuccessful: boolean) => {
+    if(isPathValid(somePath)) {
+
+        const pathArray = somePath.split(path.sep);
+        const isRoot = pathArray.length === 1;
+        const isFirstLevel = pathArray.length === 2;
+        const isPublic = pathArray.length > 2 && pathArray[2] === "public";
+
+        console.log({pathArray});
+        
+        if (isRoot || isFirstLevel || isPublic || loginSuccessful)
+            return true;
+        else
+            return false;
+    }
+    else
+        return false;
+};
+
+const canModify = (somePath: string, username: string, loginSuccessful: boolean) => {
+    if(isPathValid(somePath)) {
+
+        if (!loginSuccessful)
+            return false;
+        else {
+            const pathArray = somePath.split(path.sep);
+            const isUserDir = pathArray.length >= 2 && pathArray[1] === username;
+            if (isUserDir)
+                return true;
+            else
+                return false;
+        }
+    }
+    else
+        return false;
 };
 
 
